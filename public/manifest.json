@@ -1,6 +1,6 @@
 {
-  "name": "Tab Dance",
-  "description": "Delightful tab management",
+  "name": "Select",
+  "description": "Semantic Selection",
   "version": "0.0.1",
   "manifest_version": 3,
   "action": {
@@ -25,33 +25,18 @@
     "open_in_tab": true
   },
   "commands": {
-    "close-current": {
-      "description": "Close current"
+    "shrink-selection": {
+      "description": "Shrink selection",
+      "suggested_key": {
+        "default": "Alt+Shift+Left"
+      }
     },
-    "close-others": {
-      "description": "Close others"
-    },
-    "open-previous": {
-      "description": "Open previous"
-    },
-    "open-next": {
-      "description": "Open next"
-    },
-    "merge-windows": {
-      "description": "Merge windows"
-    },
-    "move-previous": {
-      "description": "Move previous"
-    },
-    "move-next": {
-      "description": "Move next"
-    },
-    "print-debug-info": {
-      "description": "Print debug info"
-    },
-    "toggle-selection": {
-      "description": "Toggle selection"
+    "expand-selection": {
+      "description": "Expand selection",
+      "suggested_key": {
+        "default": "Alt+Shift+Right"
+      }
     }
   },
-  "permissions": ["tabs", "commands", "storage"]
+  "permissions": ["activeTab", "commands", "scripting"]
 }
