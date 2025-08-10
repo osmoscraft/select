@@ -13,14 +13,14 @@ async function handleCommand(command: string) {
     case "expand-selection": {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: page_expandSelection,
+        func: expandSelection,
       });
       break;
     }
     case "shrink-selection": {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: page_shrinkSelection,
+        func: shrinkSelection,
       });
       break;
     }
@@ -40,18 +40,19 @@ async function handleExtensionInstall() {
  * Injected into the page to expand selection.
  * Keeps per-page state in a WeakMap stored on window.__semanticExpandBack.
  */
-function page_expandSelection() {
-  // Ensure per-page state
+function expandSelection() {
+  // getOrCreateBackMap
   const w = window as any;
   if (!w.__semanticExpandBack) {
-    w.__semanticExpandBack = new WeakMap<Element, Range>();
+    w.__semanticExpandBack = new WeakMap<Node, Range>();
   }
-  const backMap: WeakMap<Element, Range> = w.__semanticExpandBack;
+  const backMap: WeakMap<Node, Range> = w.__semanticExpandBack;
 
-  // Guard: skip editable contexts
+  // getNonEmptySelection
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
 
+  // isInInput
   const ae = document.activeElement;
   if (
     ae &&
@@ -59,56 +60,74 @@ function page_expandSelection() {
   )
     return;
 
-  const isInContentEditable = (n: Node | null) => {
-    for (let el = n instanceof Element ? n : n?.parentElement; el; el = el.parentElement) {
-      if ((el as HTMLElement).isContentEditable) return true;
-    }
-    return false;
+  // isInContentEditable(sel.anchorNode) || isInContentEditable(sel.focusNode)
+  const inContentEditable = (n: Node | null): boolean => {
+    const element = n instanceof Element ? n : n?.parentElement;
+    return !!element?.closest('[contenteditable="true"][contenteditable="plaintext-only"]');
   };
-  if (isInContentEditable(sel.anchorNode) || isInContentEditable(sel.focusNode)) return;
+  if (inContentEditable(sel.anchorNode) || inContentEditable(sel.focusNode)) return;
 
   const range = sel.getRangeAt(0);
-  const selectionTextLen = sel.toString().length;
 
-  // Start from common ancestor; climb to an element
-  let node: Node | null = range.commonAncestorContainer;
-  if (!node) return;
-  if (node.nodeType === Node.TEXT_NODE) node = (node as Text).parentElement;
-  if (!node) return;
+  const currentSelectionLength = sel.toString().trim().length;
+  const anchorAndFocusSame = sel.anchorNode === sel.focusNode;
 
-  // Find the next ancestor whose text is strictly larger than the current selection
-  let target: Element | null = node as Element;
-  while (target) {
-    const textLen = (target.textContent || "").length;
-    if (textLen > selectionTextLen) break;
-    target = target.parentElement;
+  let candidate: Node | null;
+
+  if (anchorAndFocusSame) {
+    // A. If anchor and focus are the same, select their parent
+    candidate = sel.anchorNode?.parentElement ?? null;
+  } else {
+    // B. If anchor and focus are different, select common ancestor
+    candidate = range.commonAncestorContainer;
   }
-  if (!target) return;
+
+  console.log([sel.anchorNode, sel.focusNode, currentSelectionLength]);
+  // 3. Repeat until reaching document root, looking for increased selection length
+  while (candidate && candidate !== document.documentElement) {
+    // Test if selecting this element would increase the selection length
+    const testRange = document.createRange();
+    testRange.selectNodeContents(candidate);
+    sel.removeAllRanges();
+    sel.addRange(testRange);
+
+    const testSelection = window.getSelection();
+    if (!testSelection) return;
+    const testSelectionText = testSelection.toString().trim() ?? "";
+
+    if (testSelectionText.length < currentSelectionLength) {
+      // testSelection should never be less than currentSelection. Bail out to prevent infinite loop
+      break;
+    }
+
+    if (testSelectionText.length > currentSelectionLength) {
+      break;
+    }
+
+    candidate = candidate.parentElement;
+  }
+
+  if (!candidate || candidate === document.documentElement) return;
 
   // Save current range for shrink on the target element
-  backMap.set(target, range.cloneRange());
-
-  // Select the contents of the target element
-  const newRange = document.createRange();
-  newRange.selectNodeContents(target);
-  sel.removeAllRanges();
-  sel.addRange(newRange);
+  backMap.set(candidate, range.cloneRange());
 }
 
 /**
  * Injected into the page to shrink selection.
  * Restores the previous range saved on the currently selected element, if any.
  */
-function page_shrinkSelection() {
-  // Access per-page state
+function shrinkSelection() {
+  // getBackMap
   const w = window as any;
-  const backMap: WeakMap<Element, Range> = w.__semanticExpandBack;
+  const backMap: WeakMap<Node, Range> | undefined = w.__semanticExpandBack;
   if (!backMap) return;
 
-  // Guard: skip editable contexts
-  const sel = window.getSelection();
+  // getNonEmptySelection
+  const sel = window.getSelection && window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
 
+  // isInInput
   const ae = document.activeElement;
   if (
     ae &&
@@ -116,19 +135,15 @@ function page_shrinkSelection() {
   )
     return;
 
-  const isInContentEditable = (n: Node | null) => {
-    for (let el = n instanceof Element ? n : n?.parentElement; el; el = el.parentElement) {
-      if ((el as HTMLElement).isContentEditable) return true;
-    }
-    return false;
+  const inContentEditable = (n: Node | null): boolean => {
+    const element = n instanceof Element ? n : n?.parentElement;
+    return !!element?.closest('[contenteditable="true"][contenteditable="plaintext-only"]');
   };
-  if (isInContentEditable(sel.anchorNode) || isInContentEditable(sel.focusNode)) return;
+  if (inContentEditable(sel.anchorNode) || inContentEditable(sel.focusNode)) return;
 
   const range = sel.getRangeAt(0);
 
-  // Determine the currently selected element:
-  // if the current range exactly selects an element's contents, prefer that element;
-  // otherwise use the common ancestor element.
+  // Determine the currently selected element
   let currentEl: Element | null = null;
 
   if (range.startContainer === range.endContainer && range.startContainer.nodeType === Node.ELEMENT_NODE) {

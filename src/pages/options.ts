@@ -35,7 +35,7 @@ window.addEventListener("click", (e) => {
   switch (action) {
     case "setup-keybindings": {
       chrome.tabs.create({
-        url: `chrome://extensions/shortcuts#${chrome.runtime.id}-title:~:text=Tab%20Dance`,
+        url: `chrome://extensions/shortcuts#${chrome.runtime.id}-title:~:text=Select`,
       });
       break;
     }
