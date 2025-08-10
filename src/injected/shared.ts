@@ -34,28 +34,6 @@ export function getBackMap() {
   return backMap;
 }
 
-export function firstLeafNode(root: Node): Element {
-  if (root.nodeType === Node.ELEMENT_NODE) {
-    const el = root as Element;
-    if (el.childNodes.length > 0) {
-      return firstLeafNode(el.childNodes[0]);
-    }
-    return el;
-  }
-  return root.parentElement as Element;
-}
-
-export function lastLeafNode(root: Node): Element {
-  if (root.nodeType === Node.ELEMENT_NODE) {
-    const el = root as Element;
-    if (el.childNodes.length > 0) {
-      return lastLeafNode(el.childNodes[el.childNodes.length - 1]);
-    }
-    return el;
-  }
-  return root.parentElement as Element;
-}
-
 export function closestCommonElement(range: Range): Element | null {
   let candidate = range.commonAncestorContainer;
   while (candidate) {
