@@ -1,6 +1,6 @@
 {
   "name": "Select",
-  "description": "Semantic Selection",
+  "description": "Expand and shrink selection like VS Code",
   "version": "0.0.1",
   "manifest_version": 3,
   "action": {
