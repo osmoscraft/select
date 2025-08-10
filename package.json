@@ -6,10 +6,12 @@
     "dev": "rm -rf dist && concurrently --raw npm:dev:*",
     "build": "rm -rf dist && concurrently --raw npm:build:* && npm run pack",
     "dev:pages": "npm run build:pages -- --watch",
+    "dev:injected": "npm run build:injected -- --watch",
     "dev:assets": "npm run build:assets -- --watch",
     "dev:worker": "npm run build:worker -- --watch --sourcemap=inline",
     "build:pages": "esbuild src/pages/*.ts --sourcemap --loader:.html=text --loader:.yaml=text --bundle --outdir=dist/unpacked",
     "build:assets": "node scripts/copy-assets.js --src public --target dist/unpacked",
+    "build:injected": "esbuild src/injected/*.ts --sourcemap=inline --bundle --outdir=dist/unpacked",
     "build:worker": "esbuild src/workers/*.ts  --loader:.html=text --format=esm --bundle --outdir=dist/unpacked",
     "pack": "node scripts/pack.js --dir dist/unpacked"
   },
