@@ -25,32 +25,23 @@
     "open_in_tab": true
   },
   "commands": {
-    "shrink-selection": {
-      "description": "Shrink selection",
+    "expand-selection-head": {
+      "description": "Expand selection head",
       "suggested_key": {
         "default": "Alt+Shift+Left"
       }
     },
-    "expand-selection": {
-      "description": "Expand selection",
+    "expand-selection-tail": {
+      "description": "Expand selection tail",
       "suggested_key": {
         "default": "Alt+Shift+Right"
       }
     },
-    "shrink-selection-head": {
-      "description": "Shrink selection head"
-    },
-    "expand-selection-head": {
-      "description": "Expand selection head"
-    },
-    "shrink-selection-tail": {
-      "description": "Shrink selection tail"
-    },
-    "expand-selection-tail": {
-      "description": "Expand selection tail"
-    },
-    "undo-selection": {
-      "description": "Undo selection"
+    "undo-expand-selection": {
+      "description": "Undo last expand",
+      "suggested_key": {
+        "default": "Alt+Shift+Up"
+      }
     }
   },
   "permissions": ["activeTab", "commands", "scripting"]

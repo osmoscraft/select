@@ -10,17 +10,24 @@ async function handleCommand(command: string) {
   if (!tab?.id || (tab.url && tab.url.startsWith("chrome://"))) return;
 
   switch (command) {
-    case "expand-selection": {
+    case "expand-selection-head": {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: expandSelection,
+        func: expandSelectionHead,
       });
       break;
     }
-    case "shrink-selection": {
+    case "expand-selection-tail": {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: shrinkSelection,
+        func: expandSelectionTail,
+      });
+      break;
+    }
+    case "undo-expand-selection": {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: undoExpandSelection,
       });
       break;
     }
@@ -37,97 +44,17 @@ async function handleExtensionInstall() {
 }
 
 /**
- * Injected into the page to expand selection.
- * Keeps per-page state in a WeakMap stored on window.__semanticExpandBack.
+ * Page-injected helpers
  */
-function expandSelection() {
-  // getOrCreateBackMap
+
+function expandSelectionHead() {
   const w = window as any;
-  if (!w.__semanticExpandBack) {
-    w.__semanticExpandBack = new WeakMap<Node, Range>();
-  }
-  const backMap: WeakMap<Node, Range> = w.__semanticExpandBack;
+  if (!w.__semanticExpandUndoStack) w.__semanticExpandUndoStack = [];
+  const stack: Range[] = w.__semanticExpandUndoStack;
 
-  // getNonEmptySelection
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
-
-  // isInInput
-  const ae = document.activeElement;
-  if (
-    ae &&
-    (ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement || (ae as HTMLElement).isContentEditable)
-  )
-    return;
-
-  // isInContentEditable(sel.anchorNode) || isInContentEditable(sel.focusNode)
-  const inContentEditable = (n: Node | null): boolean => {
-    const element = n instanceof Element ? n : n?.parentElement;
-    return !!element?.closest('[contenteditable="true"][contenteditable="plaintext-only"]');
-  };
-  if (inContentEditable(sel.anchorNode) || inContentEditable(sel.focusNode)) return;
-
-  const range = sel.getRangeAt(0);
-
-  const currentSelectionLength = sel.toString().trim().length;
-  const anchorAndFocusSame = sel.anchorNode === sel.focusNode;
-
-  let candidate: Node | null;
-
-  if (anchorAndFocusSame) {
-    // A. If anchor and focus are the same, select their parent
-    candidate = sel.anchorNode?.parentElement ?? null;
-  } else {
-    // B. If anchor and focus are different, select common ancestor
-    candidate = range.commonAncestorContainer;
-  }
-
-  console.log([sel.anchorNode, sel.focusNode, currentSelectionLength]);
-  // 3. Repeat until reaching document root, looking for increased selection length
-  while (candidate && candidate !== document.documentElement) {
-    // Test if selecting this element would increase the selection length
-    const testRange = document.createRange();
-    testRange.selectNodeContents(candidate);
-    sel.removeAllRanges();
-    sel.addRange(testRange);
-
-    const testSelection = window.getSelection();
-    if (!testSelection) return;
-    const testSelectionText = testSelection.toString().trim() ?? "";
-
-    if (testSelectionText.length < currentSelectionLength) {
-      // testSelection should never be less than currentSelection. Bail out to prevent infinite loop
-      break;
-    }
-
-    if (testSelectionText.length > currentSelectionLength) {
-      break;
-    }
-
-    candidate = candidate.parentElement;
-  }
-
-  if (!candidate || candidate === document.documentElement) return;
-
-  // Save current range for shrink on the target element
-  backMap.set(candidate, range.cloneRange());
-}
-
-/**
- * Injected into the page to shrink selection.
- * Restores the previous range saved on the currently selected element, if any.
- */
-function shrinkSelection() {
-  // getBackMap
-  const w = window as any;
-  const backMap: WeakMap<Node, Range> | undefined = w.__semanticExpandBack;
-  if (!backMap) return;
-
-  // getNonEmptySelection
   const sel = window.getSelection && window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
 
-  // isInInput
   const ae = document.activeElement;
   if (
     ae &&
@@ -141,27 +68,132 @@ function shrinkSelection() {
   };
   if (inContentEditable(sel.anchorNode) || inContentEditable(sel.focusNode)) return;
 
-  const range = sel.getRangeAt(0);
+  const original = sel.getRangeAt(0).cloneRange();
+  const originalLen = (sel.toString() || "").trim().length;
 
-  // Determine the currently selected element
-  let currentEl: Element | null = null;
+  const startNode = original.startContainer;
+  const startOffset = original.startOffset;
 
-  if (range.startContainer === range.endContainer && range.startContainer.nodeType === Node.ELEMENT_NODE) {
-    const el = range.startContainer as Element;
-    const coversAll = range.startOffset === 0 && range.endOffset === el.childNodes.length;
-    if (coversAll) currentEl = el;
+  const candidates: Array<[Node, number]> = [];
+
+  // Step within current container to earliest boundary
+  if (startNode.nodeType === Node.TEXT_NODE) {
+    if (startOffset > 0) candidates.push([startNode, 0]);
+  } else if (startNode.nodeType === Node.ELEMENT_NODE) {
+    if (startOffset > 0) candidates.push([startNode, 0]);
   }
-  if (!currentEl) {
-    const cac = range.commonAncestorContainer;
-    currentEl = cac.nodeType === Node.ELEMENT_NODE ? (cac as Element) : cac.parentElement || null;
-  }
-  if (!currentEl) return;
 
-  const prev = backMap.get(currentEl);
+  // Ascend to parent boundaries before current node
+  let n: Node | null = startNode;
+  while (n) {
+    const p: Node | null = n.parentNode;
+    if (!p) break;
+    const idx = Array.prototype.indexOf.call(p.childNodes, n);
+    candidates.push([p, idx]);
+    n = p;
+  }
+
+  for (const [node, offset] of candidates) {
+    const test = original.cloneRange();
+    try {
+      test.setStart(node, offset);
+    } catch {
+      continue;
+    }
+    sel.removeAllRanges();
+    sel.addRange(test);
+    const testLen = (sel.toString() || "").trim().length;
+    if (testLen > originalLen) {
+      stack.push(original);
+      return;
+    }
+  }
+
+  // No increase; restore
+  sel.removeAllRanges();
+  sel.addRange(original);
+}
+
+function expandSelectionTail() {
+  const w = window as any;
+  if (!w.__semanticExpandUndoStack) w.__semanticExpandUndoStack = [];
+  const stack: Range[] = w.__semanticExpandUndoStack;
+
+  const sel = window.getSelection && window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+
+  const ae = document.activeElement;
+  if (
+    ae &&
+    (ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement || (ae as HTMLElement).isContentEditable)
+  )
+    return;
+
+  const inContentEditable = (n: Node | null): boolean => {
+    const element = n instanceof Element ? n : n?.parentElement;
+    return !!element?.closest('[contenteditable="true"][contenteditable="plaintext-only"]');
+  };
+  if (inContentEditable(sel.anchorNode) || inContentEditable(sel.focusNode)) return;
+
+  const original = sel.getRangeAt(0).cloneRange();
+  const originalLen = (sel.toString() || "").trim().length;
+
+  const endNode = original.endContainer as Node;
+  const endOffset = original.endOffset;
+
+  const candidates: Array<[Node, number]> = [];
+
+  // Step within current container to latest boundary
+  if (endNode.nodeType === Node.TEXT_NODE) {
+    const len = ((endNode as Text).data || "").length;
+    if (endOffset < len) candidates.push([endNode, len]);
+  } else if (endNode.nodeType === Node.ELEMENT_NODE) {
+    const len = (endNode as Element).childNodes.length;
+    if (endOffset < len) candidates.push([endNode, len]);
+  }
+
+  // Ascend to parent boundaries after current node
+  let n: Node | null = endNode;
+  while (n) {
+    const p: Node | null = n.parentNode;
+    if (!p) break;
+    const idx = Array.prototype.indexOf.call(p.childNodes, n);
+    candidates.push([p, idx + 1]);
+    n = p;
+  }
+
+  for (const [node, offset] of candidates) {
+    const test = original.cloneRange();
+    try {
+      test.setEnd(node, offset);
+    } catch {
+      continue;
+    }
+    sel.removeAllRanges();
+    sel.addRange(test);
+    const testLen = (sel.toString() || "").trim().length;
+    if (testLen > originalLen) {
+      stack.push(original);
+      return;
+    }
+  }
+
+  // No increase; restore
+  sel.removeAllRanges();
+  sel.addRange(original);
+}
+
+function undoExpandSelection() {
+  const w = window as any;
+  const stack: Range[] | undefined = w.__semanticExpandUndoStack;
+  if (!stack || stack.length === 0) return;
+
+  const prev = stack.pop();
   if (!prev) return;
 
-  // Restore previous range and remove the back-link for one-step shrink
+  const sel = window.getSelection && window.getSelection();
+  if (!sel) return;
+
   sel.removeAllRanges();
   sel.addRange(prev);
-  backMap.delete(currentEl);
 }
