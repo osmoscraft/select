@@ -27,10 +27,6 @@ table {
   border-collapse: collapse;
 }
 
-tr :first-child {
-  width: 200px;
-}
-
 th,
 td {
   padding: 4px 16px;
