@@ -21,7 +21,6 @@ function expandSelection() {
     candidate = range.commonAncestorContainer;
   }
 
-  console.log([sel.anchorNode, sel.focusNode, currentSelectionLength]);
   // 3. Repeat until reaching document root, looking for increased selection length
   while (candidate && candidate !== document.documentElement) {
     // Test if selecting this element would increase the selection length
@@ -34,13 +33,7 @@ function expandSelection() {
     if (!testSelection) return;
     const testSelectionText = testSelection.toString().trim() ?? "";
 
-    if (testSelectionText.length < currentSelectionLength) {
-      break;
-    }
-
-    if (testSelectionText.length > currentSelectionLength) {
-      break;
-    }
+    if (testSelectionText.length !== currentSelectionLength) break;
 
     candidate = candidate.parentElement;
   }

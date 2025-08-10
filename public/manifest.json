@@ -48,6 +48,9 @@
       "suggested_key": {
         "default": "Alt+Shift+Down"
       }
+    },
+    "delete-selected-elements": {
+      "description": "Delete selected elements"
     }
   },
   "permissions": ["activeTab", "commands", "scripting"]

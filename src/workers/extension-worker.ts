@@ -38,6 +38,13 @@ async function handleCommand(command: string) {
       });
       break;
     }
+    case "delete-selected-elements": {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["delete-selected-elements.js"],
+      });
+      break;
+    }
   }
 }
 
